@@ -1,0 +1,3 @@
+package com.keyloop.scheduler.integration;
+import com.keyloop.scheduler.appointment.application.GetAppointmentService; import com.keyloop.scheduler.shared.error.SchedulerException; import com.keyloop.scheduler.support.*; import org.junit.jupiter.api.Test; import org.springframework.beans.factory.annotation.Autowired; import java.util.UUID; import static org.assertj.core.api.Assertions.*;
+class GetAppointmentIT extends PostgresIntegrationTest {@Autowired GetAppointmentService service;@Test void missingAppointmentIsNotFound(){assertThatThrownBy(()->service.get(UUID.randomUUID())).isInstanceOf(SchedulerException.class);}}

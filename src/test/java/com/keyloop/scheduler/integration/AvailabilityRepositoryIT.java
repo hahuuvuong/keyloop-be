@@ -1,0 +1,5 @@
+package com.keyloop.scheduler.integration;
+import com.keyloop.scheduler.support.*; import com.keyloop.scheduler.technician.infrastructure.*; import com.keyloop.scheduler.servicebay.infrastructure.*; import org.junit.jupiter.api.*; import org.springframework.beans.factory.annotation.Autowired; import org.springframework.jdbc.core.JdbcTemplate; import java.time.Instant; import static org.assertj.core.api.Assertions.*;
+class AvailabilityRepositoryIT extends PostgresIntegrationTest {@Autowired JdbcTemplate jdbc;@Autowired TechnicianRepository technicians;@Autowired ServiceBayRepository bays;@BeforeEach void seed(){SchedulingFixtures.reset(jdbc);}
+ @Test void returnsQualifiedResourcesAndUsesHalfOpenBoundary(){var start=Instant.parse("2030-01-01T10:00:00Z");assertThat(technicians.findEligible(SchedulingFixtures.DEALERSHIP,SchedulingFixtures.QUALIFICATION,start,start.plusSeconds(3600))).extracting(t->t.id).containsExactly(SchedulingFixtures.TECHNICIAN);assertThat(bays.findEligible(SchedulingFixtures.DEALERSHIP,start,start.plusSeconds(3600))).extracting(b->b.id).containsExactly(SchedulingFixtures.BAY);}
+}

@@ -1,0 +1,22 @@
+spring:
+  application.name: unified-service-scheduler
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    open-in-view: false
+    hibernate.ddl-auto: validate
+    properties.hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  jackson.time-zone: UTC
+management:
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.probes.enabled: true
+  health.livenessstate.enabled: true
+  health.readinessstate.enabled: true
+info.app:
+  name: ${spring.application.name}
+  version: '@project.version@'
+springdoc.swagger-ui.path: /swagger-ui.html

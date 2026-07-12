@@ -1,0 +1,3 @@
+package com.keyloop.scheduler.unit.appointment.application;
+import com.keyloop.scheduler.appointment.application.*; import org.junit.jupiter.api.Test; import java.time.Instant; import java.util.UUID; import static org.assertj.core.api.Assertions.*;
+class CreateAppointmentServiceTest {@Test void canonicalFingerprintIsStableAndRequestSensitive(){var id=UUID.randomUUID();var a=new CreateAppointmentCommand(id,id,id,id,Instant.parse("2030-01-01T10:00:00Z"),"key-0001");var b=new CreateAppointmentCommand(id,id,id,id,Instant.parse("2030-01-01T11:00:00Z"),"key-0001");assertThat(RequestFingerprint.of(a)).hasSize(64).isNotEqualTo(RequestFingerprint.of(b));}}
