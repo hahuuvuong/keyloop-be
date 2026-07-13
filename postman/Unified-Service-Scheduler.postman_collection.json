@@ -1,0 +1,914 @@
+{
+  "info": {
+    "_postman_id": "1d8449ab-773c-4c44-93b7-25d7da4aa9bc",
+    "name": "Unified Service Scheduler API — Scenario A",
+    "description": "Video-demo and Newman regression collection matched to the implemented Scenario A API. Docker Compose starts the app with the dev profile, whose repeatable Flyway migration seeds the reference IDs in the companion environment. The public API exposes appointment creation/retrieval/listing and advisory availability only; it does not expose reference-data CRUD or caller-selected technician/bay assignment. See postman/README.md for the resulting scenario limitations and the concurrency harness.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.collectionVariables.get('runInitialized') !== 'true') {",
+          "  const now = new Date();",
+          "  const jitterMs = Math.floor(Math.random() * 3600000);",
+          "  const base = new Date(now.getTime() + (8 * 24 * 60 * 60 * 1000) + jitterMs);",
+          "  const iso = minutes => new Date(base.getTime() + minutes * 60000).toISOString();",
+          "  const runId = 'uss-' + now.getTime() + '-' + Math.random().toString(16).slice(2, 10);",
+          "  pm.collectionVariables.set('runId', runId);",
+          "  pm.collectionVariables.set('happyStart', iso(0));",
+          "  pm.collectionVariables.set('happyEnd', iso(60));",
+          "  pm.collectionVariables.set('backToBackStart', iso(60));",
+          "  pm.collectionVariables.set('backToBackEnd', iso(120));",
+          "  pm.collectionVariables.set('partialLateStart', iso(45));",
+          "  pm.collectionVariables.set('partialEarlyStart', iso(-15));",
+          "  pm.collectionVariables.set('validationStart', iso(240));",
+          "  pm.collectionVariables.set('notFoundStart', iso(360));",
+          "  pm.collectionVariables.set('raceStart', iso(600));",
+          "  pm.collectionVariables.set('raceEnd', iso(660));",
+          "  pm.collectionVariables.set('runInitialized', 'true');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "runInitialized",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "happyStart",
+      "value": ""
+    },
+    {
+      "key": "happyEnd",
+      "value": ""
+    },
+    {
+      "key": "backToBackStart",
+      "value": ""
+    },
+    {
+      "key": "backToBackEnd",
+      "value": ""
+    },
+    {
+      "key": "partialLateStart",
+      "value": ""
+    },
+    {
+      "key": "partialEarlyStart",
+      "value": ""
+    },
+    {
+      "key": "validationStart",
+      "value": ""
+    },
+    {
+      "key": "notFoundStart",
+      "value": ""
+    },
+    {
+      "key": "raceStart",
+      "value": ""
+    },
+    {
+      "key": "raceEnd",
+      "value": ""
+    },
+    {
+      "key": "appointmentId",
+      "value": ""
+    },
+    {
+      "key": "assignedTechnicianId",
+      "value": ""
+    },
+    {
+      "key": "assignedBayId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "description": "The API has no reference-data write endpoints. Docker Compose uses the dev profile and Flyway seeds the IDs in the environment. These requests initialize unique future test times and verify that the clean-database seed is usable.",
+      "item": [
+        {
+          "name": "Initialize run and verify readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health/readiness",
+            "description": "Resets collection-scoped run variables. Run this first when clicking requests manually. A fresh random future window makes the suite rerunnable without deleting prior appointments."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const now = new Date();",
+                  "const jitterMs = Math.floor(Math.random() * 3600000);",
+                  "const base = new Date(now.getTime() + (8 * 24 * 60 * 60 * 1000) + jitterMs);",
+                  "const iso = minutes => new Date(base.getTime() + minutes * 60000).toISOString();",
+                  "const runId = 'uss-' + now.getTime() + '-' + Math.random().toString(16).slice(2, 10);",
+                  "pm.collectionVariables.set('runId', runId);",
+                  "pm.collectionVariables.set('happyStart', iso(0));",
+                  "pm.collectionVariables.set('happyEnd', iso(60));",
+                  "pm.collectionVariables.set('backToBackStart', iso(60));",
+                  "pm.collectionVariables.set('backToBackEnd', iso(120));",
+                  "pm.collectionVariables.set('partialLateStart', iso(45));",
+                  "pm.collectionVariables.set('partialEarlyStart', iso(-15));",
+                  "pm.collectionVariables.set('validationStart', iso(240));",
+                  "pm.collectionVariables.set('notFoundStart', iso(360));",
+                  "pm.collectionVariables.set('raceStart', iso(600));",
+                  "pm.collectionVariables.set('raceEnd', iso(660));",
+                  "pm.collectionVariables.set('runInitialized', 'true');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 200', () => pm.response.to.have.status(200));",
+                  "const health = pm.response.json();",
+                  "pm.test('Readiness body reports UP', () => { pm.expect(health).to.have.property('status', 'UP'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify development reference seed is schedulable",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/availability?dealershipId={{dealershipId}}&serviceTypeId={{serviceTypeId}}&startTime={{happyStart}}",
+            "description": "Confirms the dev seed supplied by R__development_seed.sql contains an active dealership, qualified technician, service bay, and 60-minute service. Customer and vehicle references are verified by the first booking."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "const availability = pm.response.json();",
+                  "pm.test('Availability response has the exact documented structure', () => {",
+                  "  pm.expect(availability).to.have.all.keys('available', 'advisory');",
+                  "  pm.expect(availability.available).to.eql(true);",
+                  "  pm.expect(availability.advisory).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Happy Path",
+      "item": [
+        {
+          "name": "Create confirmed appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-happy-1"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-happy-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Creates the baseline confirmed appointment and captures appointmentId, assignedTechnicianId, and assignedBayId as collection variables.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{happyStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "const appointment = pm.response.json();",
+                  "pm.test('Appointment response has every documented field', () => {",
+                  "  pm.expect(appointment).to.include.all.keys('id', 'customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay', 'startTime', 'endTime', 'status', 'createdAt');",
+                  "  pm.expect(appointment.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "  ['customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay'].forEach(resource => {",
+                  "    pm.expect(appointment[resource]).to.include.all.keys('id', 'uri');",
+                  "    pm.expect(appointment[resource].id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(appointment[resource].uri).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "  pm.expect(appointment.customer.id).to.eql(pm.environment.get('customerId'));",
+                  "  pm.expect(appointment.vehicle.id).to.eql(pm.environment.get('vehicleId'));",
+                  "  pm.expect(appointment.dealership.id).to.eql(pm.environment.get('dealershipId'));",
+                  "  pm.expect(appointment.serviceType.id).to.eql(pm.environment.get('serviceTypeId'));",
+                  "  pm.expect(appointment.status).to.eql('CONFIRMED');",
+                  "  pm.expect(new Date(appointment.createdAt).toString()).not.to.eql('Invalid Date');",
+                  "});",
+                  "pm.test('Start and computed end time match the 60-minute service duration', () => {",
+                  "  pm.expect(appointment.startTime).to.eql(pm.collectionVariables.get('happyStart'));",
+                  "  pm.expect(appointment.endTime).to.eql(pm.collectionVariables.get('happyEnd'));",
+                  "  pm.expect(new Date(appointment.endTime).getTime() - new Date(appointment.startTime).getTime()).to.eql(Number(pm.environment.get('serviceDurationMinutes')) * 60000);",
+                  "});",
+                  "pm.test('Location identifies the returned appointment', () => pm.expect(pm.response.headers.get('Location')).to.match(new RegExp('/api/v1/appointments/' + appointment.id + '$')));",
+                  "pm.collectionVariables.set('appointmentId', appointment.id);",
+                  "pm.collectionVariables.set('assignedTechnicianId', appointment.technician.id);",
+                  "pm.collectionVariables.set('assignedBayId', appointment.serviceBay.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get created appointment by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}",
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "const appointment = pm.response.json();",
+                  "pm.test('Retrieved appointment has every documented field', () => {",
+                  "  pm.expect(appointment).to.include.all.keys('id', 'customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay', 'startTime', 'endTime', 'status', 'createdAt');",
+                  "  pm.expect(appointment.id).to.eql(pm.collectionVariables.get('appointmentId'));",
+                  "  pm.expect(appointment.customer.id).to.eql(pm.environment.get('customerId'));",
+                  "  pm.expect(appointment.vehicle.id).to.eql(pm.environment.get('vehicleId'));",
+                  "  pm.expect(appointment.dealership.id).to.eql(pm.environment.get('dealershipId'));",
+                  "  pm.expect(appointment.serviceType.id).to.eql(pm.environment.get('serviceTypeId'));",
+                  "  pm.expect(appointment.technician.id).to.eql(pm.collectionVariables.get('assignedTechnicianId'));",
+                  "  pm.expect(appointment.serviceBay.id).to.eql(pm.collectionVariables.get('assignedBayId'));",
+                  "  pm.expect(appointment.status).to.eql('CONFIRMED');",
+                  "});",
+                  "pm.test('Retrieved interval and computed duration match the booking', () => {",
+                  "  pm.expect(appointment.startTime).to.eql(pm.collectionVariables.get('happyStart'));",
+                  "  pm.expect(appointment.endTime).to.eql(pm.collectionVariables.get('happyEnd'));",
+                  "  pm.expect(new Date(appointment.endTime).getTime() - new Date(appointment.startTime).getTime()).to.eql(Number(pm.environment.get('serviceDurationMinutes')) * 60000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create back-to-back appointment (boundary touch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-happy-back-to-back"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-happy-back-to-back"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Starts exactly when the first appointment ends. The [start,end) overlap rule permits this with the same seeded technician and bay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{backToBackStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "const appointment = pm.response.json();",
+                  "pm.test('Appointment response has every documented field', () => {",
+                  "  pm.expect(appointment).to.include.all.keys('id', 'customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay', 'startTime', 'endTime', 'status', 'createdAt');",
+                  "  pm.expect(appointment.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "  ['customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay'].forEach(resource => {",
+                  "    pm.expect(appointment[resource]).to.include.all.keys('id', 'uri');",
+                  "    pm.expect(appointment[resource].id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(appointment[resource].uri).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "  pm.expect(appointment.customer.id).to.eql(pm.environment.get('customerId'));",
+                  "  pm.expect(appointment.vehicle.id).to.eql(pm.environment.get('vehicleId'));",
+                  "  pm.expect(appointment.dealership.id).to.eql(pm.environment.get('dealershipId'));",
+                  "  pm.expect(appointment.serviceType.id).to.eql(pm.environment.get('serviceTypeId'));",
+                  "  pm.expect(appointment.status).to.eql('CONFIRMED');",
+                  "  pm.expect(new Date(appointment.createdAt).toString()).not.to.eql('Invalid Date');",
+                  "});",
+                  "pm.test('Start and computed end time match the 60-minute service duration', () => {",
+                  "  pm.expect(appointment.startTime).to.eql(pm.collectionVariables.get('backToBackStart'));",
+                  "  pm.expect(appointment.endTime).to.eql(pm.collectionVariables.get('backToBackEnd'));",
+                  "  pm.expect(new Date(appointment.endTime).getTime() - new Date(appointment.startTime).getTime()).to.eql(Number(pm.environment.get('serviceDurationMinutes')) * 60000);",
+                  "});",
+                  "pm.test('Location identifies the returned appointment', () => pm.expect(pm.response.headers.get('Location')).to.match(new RegExp('/api/v1/appointments/' + appointment.id + '$')));",
+                  "",
+                  "pm.test('Back-to-back booking reuses the same seeded technician and bay', () => {",
+                  "  pm.expect(appointment.technician.id).to.eql(pm.collectionVariables.get('assignedTechnicianId'));",
+                  "  pm.expect(appointment.serviceBay.id).to.eql(pm.collectionVariables.get('assignedBayId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Availability Conflicts (409)",
+      "description": "The implementation exposes one combined BOOKING_CONFLICT reason and automatically assigns resources. With the single-resource dev seed, these prove interval conflicts for the assigned technician and bay together. The API cannot independently target same-technician/different-bay, same-bay/different-technician, or distinguish unqualified from unavailable.",
+      "item": [
+        {
+          "name": "Exact same interval as confirmed appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-conflict-exact"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-conflict-exact"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Same service and start means the exact same computed [start,end) interval. The implemented detail identifies qualified-technician and service-bay availability together.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{happyStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(409);",
+                  "  pm.expect(problem.code).to.eql('BOOKING_CONFLICT');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('No qualified technician and service bay are available'); pm.expect(problem.detail.toLowerCase()).to.include('qualified technician'); pm.expect(problem.detail.toLowerCase()).to.include('service bay'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partial overlap — starts 15 minutes before first ends",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-conflict-partial-late"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-conflict-partial-late"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Starts at baseline start +45 minutes and therefore overlaps the final 15 minutes of the first appointment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{partialLateStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(409);",
+                  "  pm.expect(problem.code).to.eql('BOOKING_CONFLICT');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('No qualified technician and service bay are available'); pm.expect(problem.detail.toLowerCase()).to.include('qualified technician'); pm.expect(problem.detail.toLowerCase()).to.include('service bay'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partial overlap — starts before and ends inside existing interval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-conflict-partial-early"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-conflict-partial-early"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Starts 15 minutes before the baseline and ends 45 minutes into it. A fully engulfing request cannot be expressed because the API accepts only startTime and the only dev service has the same fixed 60-minute duration.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{partialEarlyStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(409);",
+                  "  pm.expect(problem.code).to.eql('BOOKING_CONFLICT');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('No qualified technician and service bay are available'); pm.expect(problem.detail.toLowerCase()).to.include('qualified technician'); pm.expect(problem.detail.toLowerCase()).to.include('service bay'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Validation Errors (422/400)",
+      "description": "The implementation maps Jakarta validation and JSON decoding failures to 400 INVALID_REQUEST. It intentionally returns a safe generic detail rather than field-level validation information. Unknown service types are resource lookups and return 404.",
+      "item": [
+        {
+          "name": "Missing required vehicleId",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-validation-missing-vehicle"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-validation-missing-vehicle"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Current error sanitization does not expose the missing field name; the regression assertion matches the implemented safe detail.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{validationStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(400);",
+                  "  pm.expect(problem.code).to.eql('INVALID_REQUEST');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('Request validation failed'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid/nonexistent service type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-validation-service-missing"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-validation-service-missing"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "The implemented contract treats a syntactically valid but unknown serviceTypeId as RESOURCE_NOT_FOUND (404), not 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{nonexistentServiceTypeId}}\",\n  \"startTime\": \"{{validationStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(404);",
+                  "  pm.expect(problem.code).to.eql('RESOURCE_NOT_FOUND');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('Service type not found'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Malformed body — wrong UUID type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-validation-wrong-type"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-validation-wrong-type"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": 42,\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{validationStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(400);",
+                  "  pm.expect(problem.code).to.eql('INVALID_REQUEST');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('Request validation failed'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Not Found (404)",
+      "description": "Vehicle lookup returns a resource-specific 404. A nonexistent dealership currently fails earlier during candidate allocation and returns 409; that current behavior is retained as an explicit regression characterization.",
+      "item": [
+        {
+          "name": "Nonexistent vehicle ID",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-not-found-vehicle"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-not-found-vehicle"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Asserts both RESOURCE_NOT_FOUND and the resource-specific Vehicle not found detail.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{nonexistentVehicleId}}\",\n  \"dealershipId\": \"{{dealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{notFoundStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(404);",
+                  "  pm.expect(problem.code).to.eql('RESOURCE_NOT_FOUND');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('Vehicle not found'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Nonexistent dealership ID — current allocator behavior",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{runId}}-not-found-dealership"
+              },
+              {
+                "key": "X-Correlation-ID",
+                "value": "postman-{{runId}}-not-found-dealership"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/appointments",
+            "description": "Characterization test: candidate allocation occurs before dealership loading, so the current implementation returns BOOKING_CONFLICT (409), not Dealership not found (404).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"dealershipId\": \"{{nonexistentDealershipId}}\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"startTime\": \"{{notFoundStart}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is exactly 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'));",
+                  "const problem = pm.response.json();",
+                  "pm.test('Problem response has the complete RFC 9457 extension structure', () => {",
+                  "  pm.expect(problem).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "  pm.expect(problem.status).to.eql(409);",
+                  "  pm.expect(problem.code).to.eql('BOOKING_CONFLICT');",
+                  "  pm.expect(problem.instance).to.eql('/api/v1/appointments');",
+                  "  pm.expect(problem.type).to.match(new RegExp('^https://keyloop[.]example/problems/'));",
+                  "  pm.expect(new Date(problem.timestamp).toString()).not.to.eql('Invalid Date');",
+                  "  pm.expect(problem.correlationId).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Error detail matches the implemented reason', () => { pm.expect(problem.detail).to.eql('No qualified technician and service bay are available'); pm.expect(problem.detail.toLowerCase()).to.include('qualified technician'); pm.expect(problem.detail.toLowerCase()).to.include('service bay'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Concurrency Demo",
+      "description": "Newman and Postman collection iterations are sequential, so this harness launches two HTTP POSTs asynchronously from one test script and aggregates both callbacks. The request bodies and target window are identical; idempotency keys differ so they are genuine competing commands.",
+      "item": [
+        {
+          "name": "Parallel race harness — exactly one winner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health/readiness",
+            "description": "Runs a readiness request, then launches two identical appointment bodies concurrently with distinct idempotency keys. Exactly one must return 201 and the other 409. Run with one Newman iteration: newman run postman/Unified-Service-Scheduler.postman_collection.json -e postman/Unified-Service-Scheduler.local.postman_environment.json --folder \"Concurrency Demo\" --iteration-count 1 --reporters cli,junit --reporter-junit-export postman/newman-concurrency.xml"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Harness request status is exactly 200', () => pm.response.to.have.status(200));",
+                  "const health = pm.response.json();",
+                  "pm.test('Harness readiness body reports UP', () => pm.expect(health).to.have.property('status', 'UP'));",
+                  "",
+                  "const baseUrl = pm.environment.get('baseUrl');",
+                  "const body = {",
+                  "  customerId: pm.environment.get('customerId'),",
+                  "  vehicleId: pm.environment.get('vehicleId'),",
+                  "  dealershipId: pm.environment.get('dealershipId'),",
+                  "  serviceTypeId: pm.environment.get('serviceTypeId'),",
+                  "  startTime: pm.collectionVariables.get('raceStart')",
+                  "};",
+                  "const statuses = [];",
+                  "const responses = [];",
+                  "let completed = 0;",
+                  "",
+                  "function finish() {",
+                  "  completed += 1;",
+                  "  if (completed !== 2) return;",
+                  "  pm.test('Exactly one parallel booking wins and one is rejected', () => {",
+                  "    pm.expect(statuses.filter(s => s === 201).length).to.eql(1);",
+                  "    pm.expect(statuses.filter(s => s === 409).length).to.eql(1);",
+                  "  });",
+                  "  const winner = responses.find(r => r.status === 201).json;",
+                  "  const loser = responses.find(r => r.status === 409).json;",
+                  "  pm.test('Winning appointment has complete assignment and computed duration', () => {",
+                  "    pm.expect(winner).to.include.all.keys('id', 'customer', 'vehicle', 'dealership', 'serviceType', 'technician', 'serviceBay', 'startTime', 'endTime', 'status', 'createdAt');",
+                  "    pm.expect(winner.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(winner.technician.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(winner.serviceBay.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(winner.startTime).to.eql(pm.collectionVariables.get('raceStart'));",
+                  "    pm.expect(winner.endTime).to.eql(pm.collectionVariables.get('raceEnd'));",
+                  "    pm.expect(winner.status).to.eql('CONFIRMED');",
+                  "    pm.expect(new Date(winner.endTime).getTime() - new Date(winner.startTime).getTime()).to.eql(Number(pm.environment.get('serviceDurationMinutes')) * 60000);",
+                  "  });",
+                  "  pm.test('Losing response has the specific concurrency/unavailability problem reason', () => {",
+                  "    pm.expect(loser).to.include.all.keys('type', 'title', 'status', 'detail', 'instance', 'code', 'timestamp', 'correlationId');",
+                  "    pm.expect(loser.status).to.eql(409);",
+                  "    pm.expect(['BOOKING_RACE_LOST', 'BOOKING_CONFLICT']).to.include(loser.code);",
+                  "    if (loser.code === 'BOOKING_RACE_LOST') pm.expect(loser.detail).to.eql('A competing request won the booking race');",
+                  "    if (loser.code === 'BOOKING_CONFLICT') pm.expect(loser.detail).to.eql('No qualified technician and service bay are available');",
+                  "  });",
+                  "}",
+                  "",
+                  "for (let i = 1; i <= 2; i += 1) {",
+                  "  pm.sendRequest({",
+                  "    url: baseUrl + '/api/v1/appointments',",
+                  "    method: 'POST',",
+                  "    header: {",
+                  "      'Content-Type': 'application/json',",
+                  "      'Idempotency-Key': pm.collectionVariables.get('runId') + '-race-' + i,",
+                  "      'X-Correlation-ID': 'postman-' + pm.collectionVariables.get('runId') + '-race-' + i",
+                  "    },",
+                  "    body: { mode: 'raw', raw: JSON.stringify(body) }",
+                  "  }, (error, response) => {",
+                  "    pm.test('Parallel request ' + i + ' completed without transport error', () => pm.expect(error).to.eql(null));",
+                  "    if (!error) {",
+                  "      statuses.push(response.code);",
+                  "      responses.push({ status: response.code, json: response.json() });",
+                  "    }",
+                  "    finish();",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
