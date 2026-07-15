@@ -1,13 +1,64 @@
-CREATE TABLE dealership (id uuid PRIMARY KEY, code varchar(50) NOT NULL UNIQUE, name varchar(200) NOT NULL, active boolean NOT NULL);
-CREATE TABLE customer (id uuid PRIMARY KEY, reference varchar(100) NOT NULL UNIQUE, display_name varchar(200) NOT NULL);
-CREATE TABLE vehicle (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customer(id), registration varchar(50) NOT NULL UNIQUE, make varchar(100), model varchar(100), UNIQUE(id, customer_id));
-CREATE INDEX idx_vehicle_customer ON vehicle(customer_id);
-CREATE TABLE qualification (id uuid PRIMARY KEY, code varchar(50) NOT NULL UNIQUE, name varchar(200) NOT NULL);
-CREATE TABLE service_type (id uuid PRIMARY KEY, code varchar(50) NOT NULL UNIQUE, name varchar(200) NOT NULL, duration_minutes integer NOT NULL CHECK(duration_minutes > 0), required_qualification_id uuid NOT NULL REFERENCES qualification(id));
-CREATE INDEX idx_service_type_qualification ON service_type(required_qualification_id);
-CREATE TABLE technician (id uuid PRIMARY KEY, dealership_id uuid NOT NULL REFERENCES dealership(id), employee_reference varchar(100) NOT NULL, display_name varchar(200) NOT NULL, active boolean NOT NULL, UNIQUE(dealership_id, employee_reference));
-CREATE INDEX idx_technician_eligible ON technician(dealership_id, active, id);
-CREATE TABLE technician_qualification (technician_id uuid NOT NULL REFERENCES technician(id), qualification_id uuid NOT NULL REFERENCES qualification(id), PRIMARY KEY(technician_id, qualification_id));
-CREATE INDEX idx_tq_qualification ON technician_qualification(qualification_id, technician_id);
-CREATE TABLE service_bay (id uuid PRIMARY KEY, dealership_id uuid NOT NULL REFERENCES dealership(id), code varchar(50) NOT NULL, active boolean NOT NULL, UNIQUE(dealership_id, code));
-CREATE INDEX idx_service_bay_eligible ON service_bay(dealership_id, active, id);
+CREATE TABLE dealership
+(
+    id     uuid PRIMARY KEY,
+    code   varchar(50)  NOT NULL UNIQUE,
+    name   varchar(200) NOT NULL,
+    active boolean      NOT NULL
+);
+CREATE TABLE customer
+(
+    id           uuid PRIMARY KEY,
+    reference    varchar(100) NOT NULL UNIQUE,
+    display_name varchar(200) NOT NULL
+);
+CREATE TABLE vehicle
+(
+    id           uuid PRIMARY KEY,
+    customer_id  uuid        NOT NULL REFERENCES customer (id),
+    registration varchar(50) NOT NULL UNIQUE,
+    make         varchar(100),
+    model        varchar(100),
+    UNIQUE (id, customer_id)
+);
+CREATE INDEX idx_vehicle_customer ON vehicle (customer_id);
+CREATE TABLE qualification
+(
+    id   uuid PRIMARY KEY,
+    code varchar(50)  NOT NULL UNIQUE,
+    name varchar(200) NOT NULL
+);
+CREATE TABLE service_type
+(
+    id                        uuid PRIMARY KEY,
+    code                      varchar(50)  NOT NULL UNIQUE,
+    name                      varchar(200) NOT NULL,
+    duration_minutes          integer      NOT NULL CHECK (duration_minutes > 0),
+    required_qualification_id uuid         NOT NULL REFERENCES qualification (id)
+);
+CREATE INDEX idx_service_type_qualification ON service_type (required_qualification_id);
+CREATE TABLE technician
+(
+    id                 uuid PRIMARY KEY,
+    dealership_id      uuid         NOT NULL REFERENCES dealership (id),
+    employee_reference varchar(100) NOT NULL,
+    display_name       varchar(200) NOT NULL,
+    active             boolean      NOT NULL,
+    UNIQUE (dealership_id, employee_reference)
+);
+CREATE INDEX idx_technician_eligible ON technician (dealership_id, active, id);
+CREATE TABLE technician_qualification
+(
+    technician_id    uuid NOT NULL REFERENCES technician (id),
+    qualification_id uuid NOT NULL REFERENCES qualification (id),
+    PRIMARY KEY (technician_id, qualification_id)
+);
+CREATE INDEX idx_tq_qualification ON technician_qualification (qualification_id, technician_id);
+CREATE TABLE service_bay
+(
+    id            uuid PRIMARY KEY,
+    dealership_id uuid        NOT NULL REFERENCES dealership (id),
+    code          varchar(50) NOT NULL,
+    active        boolean     NOT NULL,
+    UNIQUE (dealership_id, code)
+);
+CREATE INDEX idx_service_bay_eligible ON service_bay (dealership_id, active, id);

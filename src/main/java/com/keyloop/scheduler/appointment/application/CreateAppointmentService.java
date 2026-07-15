@@ -42,8 +42,7 @@ public class CreateAppointmentService {
                 var recovered = recovery.find(command.idempotencyKey(), fp);
                 if (recovered.isPresent()) return recovered.get();
                 metrics.conflict();
-            }
-            else metrics.failure();
+            } else metrics.failure();
             throw ex;
         } catch (RuntimeException ex) {
             metrics.failure();

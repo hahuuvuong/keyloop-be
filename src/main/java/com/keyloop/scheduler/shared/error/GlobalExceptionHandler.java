@@ -17,6 +17,7 @@ import java.time.Instant;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(SchedulerException.class)
     ResponseEntity<ProblemDetail> scheduler(SchedulerException e, HttpServletRequest r) {
         var status = switch (e.code()) {
