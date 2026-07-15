@@ -14,7 +14,10 @@ import java.util.*;
 @RequestMapping("/api/v1/availability")
 public class AvailabilityController {
     private final AvailabilityService service;
-    public AvailabilityController(AvailabilityService service) { this.service = service; }
+
+    public AvailabilityController(AvailabilityService service) {
+        this.service = service;
+    }
 
     @GetMapping
     @Operation(summary = "Preview resource availability", description = "Advisory only; appointment creation revalidates availability atomically.")

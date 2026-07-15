@@ -1,3 +1,18 @@
 package com.keyloop.scheduler.appointment.api;
-import com.keyloop.scheduler.appointment.application.AppointmentView; import java.net.URI;
-public final class AppointmentMapper {private AppointmentMapper(){}public static AppointmentResponse toResponse(AppointmentView a){return new AppointmentResponse(a.id(),ref("customers",a.customerId()),ref("vehicles",a.vehicleId()),ref("dealerships",a.dealershipId()),ref("service-types",a.serviceTypeId()),ref("technicians",a.technicianId()),ref("service-bays",a.serviceBayId()),a.startTime(),a.endTime(),a.status(),a.createdAt());}private static ResourceReference ref(String type,java.util.UUID id){return new ResourceReference(id,URI.create("/api/v1/"+type+"/"+id));}}
+
+import com.keyloop.scheduler.appointment.application.AppointmentView;
+
+import java.net.URI;
+
+public final class AppointmentMapper {
+    private AppointmentMapper() {
+    }
+
+    public static AppointmentResponse toResponse(AppointmentView a) {
+        return new AppointmentResponse(a.id(), ref("customers", a.customerId()), ref("vehicles", a.vehicleId()), ref("dealerships", a.dealershipId()), ref("service-types", a.serviceTypeId()), ref("technicians", a.technicianId()), ref("service-bays", a.serviceBayId()), a.startTime(), a.endTime(), a.status(), a.createdAt());
+    }
+
+    private static ResourceReference ref(String type, java.util.UUID id) {
+        return new ResourceReference(id, URI.create("/api/v1/" + type + "/" + id));
+    }
+}
